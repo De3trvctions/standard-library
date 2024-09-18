@@ -1,11 +1,11 @@
 package utility
 
 import (
-	"api-login/consts"
-	"api-login/mail"
-	"api-login/redis"
 	"bytes"
 	"fmt"
+	"standard-library/consts"
+	"standard-library/mail"
+	"standard-library/redis"
 	"text/template"
 	"time"
 

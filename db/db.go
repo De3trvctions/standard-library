@@ -1,9 +1,8 @@
 package db
 
 import (
-	_ "api-login/models"
-	"api-login/nacos"
 	"database/sql"
+	"standard-library/nacos"
 	"time"
 
 	"github.com/beego/beego/v2/client/orm"

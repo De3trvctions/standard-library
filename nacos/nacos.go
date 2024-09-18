@@ -1,11 +1,11 @@
 package nacos
 
 import (
-	"api-login/mail"
 	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
+	"standard-library/mail"
 	"strconv"
 	"strings"
 	"sync"

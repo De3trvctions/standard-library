@@ -1,12 +1,11 @@
 package initilize
 
 import (
-	"api-login/config"
-	"api-login/crontask"
-	"api-login/db"
-	"api-login/mail"
-	"api-login/nacos"
-	"api-login/redis"
+	"standard-library/config"
+	"standard-library/db"
+	"standard-library/mail"
+	"standard-library/nacos"
+	"standard-library/redis"
 	"strings"
 
 	"github.com/beego/beego/v2/core/logs"
@@ -89,8 +88,4 @@ func InitNacosConfig() {
 		logs.Error("[InitNacosConfig] Init Nacos error 2", err)
 	}
 	logs.Info("[InitLanguage] Init Nacos Success")
-}
-
-func InitCron() {
-	crontask.InitCronTask()
 }
