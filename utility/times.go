@@ -25,11 +25,26 @@ func TimeEndOfDay() (resultTime time.Time, timeresult string) {
 }
 
 func TimeStringBetween(startTime, endTime string) (durationDay int, err error) {
-	startTimetmp, err := time.Parse(time.DateOnly, startTime)
+	var startTimetmp time.Time
+
+	logs.Info(startTime)
+	if len(startTime) == 19 {
+		startTimetmp, err = time.Parse(time.DateOnly, startTime)
+	} else {
+		startTimetmp, err = time.Parse(time.DateOnly, startTime)
+	}
 	if err != nil {
 		logs.Error("[TimeStringBetween] Parse Starttime error", err)
 	}
-	endTimetmp, err := time.Parse(time.DateOnly, endTime)
+
+	var endTimetmp time.Time
+
+	logs.Info(endTime)
+	if len(endTime) == 19 {
+		endTimetmp, err = time.Parse(time.DateOnly, endTime)
+	} else {
+		endTimetmp, err = time.Parse(time.DateOnly, endTime)
+	}
 	if err != nil {
 		logs.Error("[TimeStringBetween] Parse EnndTime error", err)
 		return

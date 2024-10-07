@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"standard-library/grpc"
 	"standard-library/mail"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ var settingsMap sync.Map
 
 var (
 	Mail               []*mail.Option
+	Service            map[string]string //GRPC服务注册map[serviceName]address
+	GRPC               *grpc.Option      //GRPC配置
 	Lang               string
 	TokenSalt          string
 	TokenExpMinute     int64
@@ -102,6 +105,8 @@ func setValues(dataId string) {
 		return
 	}
 	setting.Json("Mail", &Mail, nil)
+	setting.Json("Service", &Service, nil)
+	setting.Json("GRPC", &GRPC, nil)
 
 	Lang = setting.String("Lang", "zh-CN")
 	TokenSalt = setting.String("TokenSalt", "")

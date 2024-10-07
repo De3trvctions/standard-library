@@ -1,8 +1,12 @@
 package initilize
 
 import (
+	"fmt"
+	"log"
+	"net"
 	"standard-library/config"
 	"standard-library/db"
+	"standard-library/grpc"
 	"standard-library/mail"
 	"standard-library/nacos"
 	"standard-library/redis"
@@ -88,4 +92,31 @@ func InitNacosConfig() {
 		logs.Error("[InitNacosConfig] Init Nacos error 2", err)
 	}
 	logs.Info("[InitLanguage] Init Nacos Success")
+}
+
+func RunGRPC(srv *grpc.Server) {
+	listener, err := net.Listen("tcp", fmt.Sprint(":", config.HttpPort))
+	if err != nil {
+		log.Panicf("GRPC service listen failed %s\n", err.Error())
+	}
+	logs.Warn("server Running on http://:%d", config.HttpPort)
+	err = srv.Srv.Serve(listener)
+	if err != nil {
+		log.Panicf("GRPC service start failed %s\n", err.Error())
+	}
+}
+
+// InitGRPC 初始化GRPC连接池
+// srvName添加旧版服务发现兼容配置，全部转换后删除-(02-13)
+func InitGRPC() {
+	for serviceName, address := range nacos.Service {
+		go func(serviceName, address string) {
+			if err := grpc.Register(serviceName, address, nacos.GRPC.Copy()); err != nil {
+				logs.Error("[config.Service]InitGRPC Service <%s> Address <%s> failed register,Error:<%s>", serviceName, address, err.Error())
+				return
+			} else {
+				logs.Info("[config.Service]InitGRPC Service <%s> Address <%s> success register", serviceName, address)
+			}
+		}(serviceName, address)
+	}
 }
