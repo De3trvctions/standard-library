@@ -78,8 +78,6 @@ type pool struct {
 	conns   []*conn    //全部实际链接
 	dirty   *list.List //要被清理的链接
 	address string     //服务器地址
-	ip      string     //服务器Ip，解析address
-	port    string     //服务器端口，解析address
 	closed  int32      //pool关闭标识位
 	ring    *ring.Ring
 	ctx     context.Context
@@ -146,7 +144,6 @@ func (p *pool) decrRef() {
 	if newRef == 0 && atomic.LoadInt32(&p.current) > int32(p.opt.MaxIdle) {
 		p.Lock()
 		if atomic.LoadInt32(&p.ref) == 0 {
-			//log.Printf("shrink pool: %d ---> %d, decrement: %d, maxActive: %d\n", p.current, p.opt.MaxIdle, p.current-int32(p.opt.MaxIdle), p.opt.MaxActive)
 			atomic.StoreInt32(&p.current, int32(p.opt.MaxIdle))
 			p.deleteFrom(p.opt.MaxIdle)
 		}

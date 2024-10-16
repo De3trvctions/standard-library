@@ -3,12 +3,13 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
-	"strings"
-	"time"
 )
 
 // Option 配置
@@ -78,20 +79,6 @@ func Dial(address string, opt *Option) (*grpc.ClientConn, error) {
 		}
 		address = addresses[0]
 	}
-	//var ip net.IP
-	//ip = net.ParseIP(address)
-	//if ip == nil {
-	//	ips, err := net.LookupIP(address)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("GRPC netlookup <%s> ip failed %s", address, err.Error())
-	//	}
-	//	if len(ips) == 0 {
-	//		return nil, fmt.Errorf("GRPC <%s> no ip", address)
-	//	}
-	//	ip = ips[0]
-	//}
-	//
-	//target := fmt.Sprint(ip.String(), ":", port) //默认到集群负载均衡的80
 	target := fmt.Sprint(address, ":", port)
 	ctx, cancel := context.WithTimeout(context.Background(), DialTimeout)
 	defer cancel()
