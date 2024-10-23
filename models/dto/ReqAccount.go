@@ -5,6 +5,8 @@ type ReqAccountDetail struct {
 	Username   string
 	Email      string
 	CreateTime int64
+	Page       int64
+	PageSize   int64
 }
 
 type ReqEditAccount struct {
