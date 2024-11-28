@@ -18,3 +18,12 @@ type ReqEditAccount struct {
 	Phone       int
 	CountryCode int
 }
+
+type ReqAccountList struct {
+	Id         int64
+	Username   string
+	CreateTime int
+	Email      string
+	Page       int64
+	PageSize   int64
+}
