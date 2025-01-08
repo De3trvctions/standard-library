@@ -105,7 +105,7 @@ func setValues(dataId string) {
 		return
 	}
 	setting.Json("Mail", &Mail, nil)
-	setting.Json("Service", &Service, nil)
+	setting.Json("Service", &Service, `{"service-login":"localhost:55000", "service-account":"localhost:55001"}`)
 	setting.Json("GRPC", &GRPC, nil)
 
 	Lang = setting.String("Lang", "zh-CN")
