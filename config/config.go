@@ -27,10 +27,13 @@ func init() {
 }
 
 func stringToInt64(s string) int64 {
+	if s == "" {
+		return 0
+	}
 	i, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		logs.Error("[Conf][stringToInt64]Error", err)
-		panic(err)
+		return 0
 	}
 	return i
 }
