@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"standard-library/config"
 	"standard-library/grpc"
 	"standard-library/mail"
 	"strconv"
@@ -12,39 +13,46 @@ import (
 	"sync"
 
 	"github.com/beego/beego/v2/core/logs"
+	"github.com/nacos-group/nacos-sdk-go/clients"
 	"github.com/nacos-group/nacos-sdk-go/clients/config_client"
+	"github.com/nacos-group/nacos-sdk-go/clients/naming_client"
+	"github.com/nacos-group/nacos-sdk-go/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/vo"
 )
 
 var settingsMap sync.Map
 
+// Global Nacos Naming Client
+var NacosNamingClient naming_client.INamingClient
+
 var (
-	Mail               []*mail.Option
-	Service            map[string]string //GRPC服务注册map[serviceName]address
-	GRPC               *grpc.Option      //GRPC配置
-	Lang               string
-	TokenSalt          string
-	TokenExpMinute     int64
-	TokenMaxExpSecond  int64
-	ValidCodeExpMinute int64
-	DBDriver           string
-	DBUser             string
-	DBPassword         string
-	DBHost             string
-	DBPort             string
-	DBName             string
-	RedisAddr          string
-	RedisPort          string
+	Mail                  []*mail.Option
+	Service               map[string]string //GRPC服务注册map[serviceName]address
+	GRPC                  *grpc.Option      //GRPC配置
+	Lang                  string
+	TokenSalt             string
+	TokenExpMinute        int64
+	TokenRefreshExpMinute int64
+	TokenMaxExpSecond     int64
+	ValidCodeExpMinute    int64
+	DBDriver              string
+	DBUser                string
+	DBPassword            string
+	DBHost                string
+	DBPort                string
+	DBName                string
+	RedisAddr             string
+	RedisPort             string
 )
 
+// Initializes and syncs Nacos config
 func SyncConf(conf config_client.IConfigClient, dataId, groupId string) (err error) {
-	// Get config
 	content, err := conf.GetConfig(vo.ConfigParam{
 		DataId: dataId,
 		Group:  groupId,
 	})
 	if err != nil {
-		logs.Error("[SyncConf] Error", err)
+		logs.Error("[SyncConf] Error fetching Nacos config:", err)
 		return
 	}
 
@@ -53,6 +61,43 @@ func SyncConf(conf config_client.IConfigClient, dataId, groupId string) (err err
 	setValues(dataId)
 
 	return
+}
+
+// Initialize Nacos Naming Client
+func InitNacosClient() error {
+	// Create client config
+	clientConfig := constant.ClientConfig{
+		NamespaceId:         config.NacosNamespaceId, // Namespace ID
+		TimeoutMs:           5000,
+		NotLoadCacheAtStart: true,
+		LogDir:              "/tmp/nacos/log",
+		CacheDir:            "/tmp/nacos/cache",
+		LogLevel:            "debug",
+	}
+
+	// Create server config
+	serverConfigs := []constant.ServerConfig{
+		{
+			IpAddr:      config.NacosUrl, // Nacos server IP
+			Port:        uint64(config.NacosPort),
+			ContextPath: "/nacos",
+			Scheme:      "http",
+		},
+	}
+
+	// Create a Naming Client for Service Registration
+	namingClient, err := clients.CreateNamingClient(map[string]interface{}{
+		"clientConfig":  clientConfig,
+		"serverConfigs": serverConfigs,
+	})
+	if err != nil {
+		logs.Error("[InitNacosClient] Error creating Nacos Naming Client:", err)
+		return err
+	}
+
+	NacosNamingClient = namingClient
+	logs.Info("[InitNacosClient] Successfully initialized Nacos Naming Client")
+	return nil
 }
 
 type Setting struct {
@@ -111,6 +156,10 @@ func setValues(dataId string) {
 	Lang = setting.String("Lang", "zh-CN")
 	TokenSalt = setting.String("TokenSalt", "")
 	TokenExpMinute = setting.Int("TokenExpMinute", 0)
+	TokenRefreshExpMinute = setting.Int("TokenRefreshExpMinute", 0)
+	if TokenRefreshExpMinute == 0 {
+		TokenRefreshExpMinute = TokenExpMinute
+	}
 	TokenMaxExpSecond = setting.Int("TokenMaxExpSecond", 0)
 	ValidCodeExpMinute = setting.Int("ValidCodeExpMinute", 0)
 	DBDriver = setting.String("DBDriver", "mysql")

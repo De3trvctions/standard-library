@@ -1,7 +1,11 @@
 // Package grpc GRPC操作封装
 package grpc
 
-import "google.golang.org/grpc"
+import (
+	"sync/atomic"
+
+	"google.golang.org/grpc"
+)
 
 // Conn GRPC连接结构体
 type Conn interface {
@@ -10,9 +14,10 @@ type Conn interface {
 }
 
 type conn struct {
-	cli  *grpc.ClientConn
-	pool *pool
-	once bool
+	cli      *grpc.ClientConn
+	pool     *pool
+	once     bool
+	overflow bool
 }
 
 // Conn 返回GRPC cli
@@ -22,6 +27,9 @@ func (c *conn) Conn() *grpc.ClientConn {
 
 // Close 关闭连接池并释放连接
 func (c *conn) Close() error {
+	if c.overflow {
+		atomic.AddInt32(&c.pool.overflowInFlight, -1)
+	}
 	c.pool.decrRef()
 	if c.once {
 		return c.reset()
@@ -39,10 +47,11 @@ func (c *conn) reset() error {
 	return nil
 }
 
-func (p *pool) wrapConn(cli *grpc.ClientConn, once bool) *conn {
+func (p *pool) wrapConn(cli *grpc.ClientConn, once bool, overflow bool) *conn {
 	return &conn{
-		cli:  cli,
-		pool: p,
-		once: once,
+		cli:      cli,
+		pool:     p,
+		once:     once,
+		overflow: overflow,
 	}
 }

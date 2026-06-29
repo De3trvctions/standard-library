@@ -5,8 +5,10 @@ const (
 	FailLoginAccountLock     = "FailLoginAccountLock:%s"
 	FailLoginAccountLockTime = "FailLoginAccountLockTime:%s"
 
-	AccountLoginByToken    = "AccountLoginByToken:%v"
-	AccountLoginByUsername = "AccountLoginByUsername:%v"
+	AccountLoginByToken           = "AccountLoginByToken:%v"
+	AccountLoginByUsername        = "AccountLoginByUsername:%v"
+	RefreshAccountLoginByToken    = "RefreshAccountLoginByToken:%v"
+	RefreshAccountLoginByUsername = "RefreshAccountLoginByUsername:%v"
 
 	RegisterEmailValidCode           = "RegisterEmailValidCode:%s"
 	RegisterEmailValidCodeLock       = "RegisterEmailValidCodeLock:%v"

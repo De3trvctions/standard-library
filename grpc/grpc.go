@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -14,14 +15,20 @@ import (
 
 // Option 配置
 type Option struct {
-	Dial                 func(address string, opt *Option) (*grpc.ClientConn, error) `json:"-"`
-	MaxIdle              int                                                         //最大链接池大小
-	MaxActive            int                                                         //在给定时间分配的最大连接数。为0时，池中的连接数没有限制
-	MaxConcurrentStreams int                                                         //限制每个连接的并发流数量
-	Reuse                bool                                                        //pool在 MaxActive 限制时，为 true，Get() 会返回重用连接，为 false，则创建新链接返回。
-	RecycleDur           uint64                                                      //回收间隔时间(s)。最小间隔必须大于10s
-	Logger               Logger                                                      //log打印
-	DialOptions          []grpc.DialOption                                           //额外的grpc链接设置
+	Dial                  func(address string, opt *Option) (*grpc.ClientConn, error) `json:"-"`
+	MaxIdle               int                                                         //最大链接池大小
+	MaxActive             int                                                         //在给定时间分配的最大连接数。为0时，池中的连接数没有限制
+	MaxConcurrentStreams  int                                                         //限制每个连接的并发流数量
+	Reuse                 bool                                                        //pool在 MaxActive 限制时，为 true，Get() 会返回重用连接，为 false，则创建新链接返回。
+	RecycleDur            uint64                                                      //回收间隔时间(s)。最小间隔必须大于10s
+	GrowStepMax           int                                                         //单次扩容最大增量(连接数)
+	GrowCooldownMs        uint32                                                      //扩容冷却时间(ms)
+	OverflowMax           int                                                         //MaxActive 达到后允许的溢出(once)连接并发上限
+	OverflowDialPerSecond uint32                                                      //溢出连接拨号频率上限(每秒)，0 表示不限速
+	ShrinkLowRate         float64                                                     //缩容低水位阈值(滑动窗口利用率)
+	ShrinkLowStreak       int                                                         //连续低水位次数达到后才缩容
+	Logger                Logger                                                      //log打印
+	DialOptions           []grpc.DialOption                                           //额外的grpc链接设置
 }
 
 // DefaultOptions 默认配置
@@ -38,15 +45,22 @@ var DefaultOptions = Option{
 
 // Copy 拷贝配置，防止指针传递后被修改
 func (o *Option) Copy() *Option {
+	copiedDialOptions := append([]grpc.DialOption(nil), o.DialOptions...)
 	return &Option{
-		Dial:                 o.Dial,
-		MaxIdle:              o.MaxIdle,
-		MaxActive:            o.MaxActive,
-		MaxConcurrentStreams: o.MaxConcurrentStreams,
-		Reuse:                o.Reuse,
-		RecycleDur:           o.RecycleDur,
-		Logger:               o.Logger,
-		DialOptions:          o.DialOptions,
+		Dial:                  o.Dial,
+		MaxIdle:               o.MaxIdle,
+		MaxActive:             o.MaxActive,
+		MaxConcurrentStreams:  o.MaxConcurrentStreams,
+		Reuse:                 o.Reuse,
+		RecycleDur:            o.RecycleDur,
+		GrowStepMax:           o.GrowStepMax,
+		GrowCooldownMs:        o.GrowCooldownMs,
+		OverflowMax:           o.OverflowMax,
+		OverflowDialPerSecond: o.OverflowDialPerSecond,
+		ShrinkLowRate:         o.ShrinkLowRate,
+		ShrinkLowStreak:       o.ShrinkLowStreak,
+		Logger:                o.Logger,
+		DialOptions:           copiedDialOptions,
 	}
 }
 
@@ -67,23 +81,49 @@ func (o *Option) getDialOptions() []grpc.DialOption {
 	return o.DialOptions
 }
 
-// Dial 返回默认配置的 grpc 连接。支持填写IPv4和hostname
-func Dial(address string, opt *Option) (*grpc.ClientConn, error) {
-	var port = "80"
-	addresses := strings.Split(address, ":")
-	if len(addresses) > 1 && addresses[1] != "" {
-		var err error
-		port = addresses[1]
-		if err != nil {
-			return nil, fmt.Errorf("GRPC invalid address <%s>", address)
-		}
-		address = addresses[0]
+func parseTarget(address string, defaultPort string) (string, error) {
+	if address == "" {
+		return "", fmt.Errorf("GRPC invalid address <%s>", address)
 	}
-	target := fmt.Sprint(address, ":", port)
-	ctx, cancel := context.WithTimeout(context.Background(), DialTimeout)
-	defer cancel()
-	return grpc.DialContext(ctx, target, append(opt.getDialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig, MinConnectTimeout: MinConnectTimeout}),
+
+	host := address
+	port := defaultPort
+
+	if h, p, err := net.SplitHostPort(address); err == nil {
+		host = h
+		if p != "" {
+			port = p
+		}
+	} else if strings.Count(address, ":") == 1 {
+		parts := strings.SplitN(address, ":", 2)
+		if len(parts) == 2 {
+			host = parts[0]
+			if parts[1] != "" {
+				port = parts[1]
+			}
+		}
+	}
+
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") && !strings.HasSuffix(host, "]") {
+		host = "[" + host + "]"
+	}
+	return host + ":" + port, nil
+}
+
+func defaultConnectParams() grpc.ConnectParams {
+	cfg := backoff.DefaultConfig
+	cfg.MaxDelay = BackoffMaxDelay
+	return grpc.ConnectParams{
+		Backoff:           cfg,
+		MinConnectTimeout: MinConnectTimeout,
+	}
+}
+
+func defaultDialOptions(opt *Option) []grpc.DialOption {
+	base := append([]grpc.DialOption(nil), opt.getDialOptions()...)
+	return append(base,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(defaultConnectParams()),
 		grpc.WithInitialWindowSize(InitialWindowSize),
 		grpc.WithInitialConnWindowSize(InitialConnWindowSize),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(MaxSendMsgSize), grpc.MaxCallRecvMsgSize(MaxRecvMsgSize)),
@@ -92,8 +132,19 @@ func Dial(address string, opt *Option) (*grpc.ClientConn, error) {
 			Timeout:             KeepAliveTimeout,
 			PermitWithoutStream: false,
 		}),
-		grpc.WithBlock(), //此处添加block防止因为grpc address不可用导致的无限重试问题)
-	)...)
+		grpc.WithBlock(),
+	)
+}
+
+// Dial 返回默认配置的 grpc 连接。支持填写IPv4和hostname
+func Dial(address string, opt *Option) (*grpc.ClientConn, error) {
+	target, err := parseTarget(address, "80")
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), DialTimeout)
+	defer cancel()
+	return grpc.DialContext(ctx, target, defaultDialOptions(opt)...)
 }
 
 // Server 对grpc package server结构的封装

@@ -1,7 +1,7 @@
 package config
 
 import (
-	"standard-library/utility"
+	"strconv"
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/server/web"
@@ -18,12 +18,21 @@ var (
 )
 
 func init() {
-	HttpPort = utility.StringToInt64(getValue("HttpPort"))
-	NacosPort = utility.StringToInt64(getValue("NacosPort"))
+	HttpPort = stringToInt64(getValue("HttpPort"))
+	NacosPort = stringToInt64(getValue("NacosPort"))
 	NacosUrl = getValue("NacosUrl")
 	NacosNamespaceId = getValue("NacosNamespaceId")
 	NacosDataId = getValue("NacosDataId")
 	NacosGroupId = getValue("NacosGroupId")
+}
+
+func stringToInt64(s string) int64 {
+	i, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		logs.Error("[Conf][stringToInt64]Error", err)
+		panic(err)
+	}
+	return i
 }
 
 func getValue(key string) string {

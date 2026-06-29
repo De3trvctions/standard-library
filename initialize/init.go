@@ -11,12 +11,14 @@ import (
 	"standard-library/mail"
 	"standard-library/nacos"
 	"standard-library/redis"
+	"strconv"
 	"strings"
 
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/i18n"
 	"github.com/nacos-group/nacos-sdk-go/clients"
 	"github.com/nacos-group/nacos-sdk-go/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/vo"
 )
 
 func InitLogs() {
@@ -73,9 +75,15 @@ func InitMail(option ...*mail.Option) {
 }
 
 func InitNacosConfig() {
-	// Create a client config
+	// Initialize Nacos Naming Client
+	if err := nacos.InitNacosClient(); err != nil {
+		logs.Error("[InitNacosConfig] Failed to initialize Nacos Naming Client:", err)
+		return
+	}
+
+	// Create a Config Client for fetching Nacos configurations
 	clientConfig := constant.ClientConfig{
-		NamespaceId:         config.NacosNamespaceId, // namespaceId
+		NamespaceId:         config.NacosNamespaceId,
 		TimeoutMs:           5000,
 		NotLoadCacheAtStart: true,
 		LogDir:              "/tmp/nacos/log",
@@ -83,30 +91,30 @@ func InitNacosConfig() {
 		LogLevel:            "debug",
 	}
 
-	// Create a server config
 	serverConfigs := []constant.ServerConfig{
 		{
-			IpAddr:      config.NacosUrl, // Nacos server IP
-			ContextPath: "/nacos",
+			IpAddr:      config.NacosUrl,
 			Port:        uint64(config.NacosPort),
+			ContextPath: "/nacos",
 			Scheme:      "http",
 		},
 	}
 
-	// Create a config client
 	configClient, err := clients.CreateConfigClient(map[string]interface{}{
 		"clientConfig":  clientConfig,
 		"serverConfigs": serverConfigs,
 	})
 	if err != nil {
-		logs.Error("[InitNacosConfig] Init Nacos error 1", err)
+		logs.Error("[InitNacosConfig] Failed to create Nacos Config Client:", err)
+		return
 	}
 
 	err = nacos.SyncConf(configClient, config.NacosDataId, config.NacosGroupId)
 	if err != nil {
-		logs.Error("[InitNacosConfig] Init Nacos error 2", err)
+		logs.Error("[InitNacosConfig] Failed to sync Nacos config:", err)
 	}
-	logs.Info("[InitLanguage] Init Nacos Success")
+
+	logs.Info("[InitNacosConfig] Successfully initialized Nacos")
 }
 
 func RunGRPC(srv *grpc.Server) {
@@ -124,39 +132,52 @@ func RunGRPC(srv *grpc.Server) {
 // InitGRPC 初始化GRPC连接池
 // srvName添加旧版服务发现兼容配置，全部转换后删除-(02-13)
 func InitGRPC() {
-	// serviceMap := map[string]string{
-	// 	"service-login":   "localhost:55000",
-	// 	"service-account": "localhost:55001",
-	// }
-
-	// tmp := &grpc.Option{
-	// 	MaxIdle:              8,
-	// 	MaxActive:            64,
-	// 	MaxConcurrentStreams: 64,
-	// 	RecycleDur:           600,
-	// 	Reuse:                true,
-	// }
-	// tmp.Logger.Open = false
-
-	// for serviceName, address := range serviceMap {
-	// 	go func(serviceName, address string) {
-	// 		if err := grpc.Register(serviceName, address, tmp.Copy()); err != nil {
-	// 			logs.Error("[config.Service]InitGRPC Service <%s> Address <%s> failed register,Error:<%s>", serviceName, address, err.Error())
-	// 			return
-	// 		} else {
-	// 			logs.Info("[config.Service]InitGRPC Service <%s> Address <%s> success register", serviceName, address)
-	// 		}
-	// 	}(serviceName, address)
-	// }
-
 	for serviceName, address := range nacos.Service {
 		go func(serviceName, address string) {
 			if err := grpc.Register(serviceName, address, nacos.GRPC.Copy()); err != nil {
-				logs.Error("[config.Service]InitGRPC Service <%s> Address <%s> failed register,Error:<%s>", serviceName, address, err.Error())
+				logs.Error("[config.Service] InitGRPC Service <%s> Address <%s> failed to register, Error: <%s>", serviceName, address, err.Error())
 				return
-			} else {
-				logs.Info("[config.Service]InitGRPC Service <%s> Address <%s> success register", serviceName, address)
 			}
+			logs.Info("[config.Service] InitGRPC Service <%s> Address <%s> successfully registered", serviceName, address)
+
+			// Register GRPC service with Nacos
+			registerServiceWithNacos(serviceName, address)
 		}(serviceName, address)
+	}
+}
+
+func registerServiceWithNacos(serviceName, address string) {
+	if nacos.NacosNamingClient == nil {
+		logs.Error("[registerServiceWithNacos] NacosNamingClient is not initialized")
+		return
+	}
+
+	parts := strings.Split(address, ":")
+	if len(parts) != 2 {
+		logs.Error("[registerServiceWithNacos] Invalid service address format: %s", address)
+		return
+	}
+	ip := parts[0]
+	port, err := strconv.Atoi(parts[1])
+	if err != nil {
+		logs.Error("[registerServiceWithNacos] Invalid port in service address: %s", address)
+		return
+	}
+
+	// Register service with Nacos
+	success, err := nacos.NacosNamingClient.RegisterInstance(vo.RegisterInstanceParam{
+		Ip:          ip,
+		Port:        uint64(port),
+		ServiceName: serviceName,
+		Weight:      1.0,
+		Enable:      true,
+		Healthy:     true,
+		Ephemeral:   true,
+	})
+
+	if err != nil || !success {
+		logs.Error("[registerServiceWithNacos] Failed to register service <%s> with Nacos: %v", serviceName, err)
+	} else {
+		logs.Info("[registerServiceWithNacos] Successfully registered service <%s> with Nacos", serviceName)
 	}
 }
